@@ -16,6 +16,10 @@ class Process
         this.execution=execution;
     }
 }
+class Core
+{
+    
+}
 class ccedf
 {
     static int availablefreq[]={2,3,4};
@@ -33,6 +37,10 @@ class ccedf
         //energy calculation for EDF
         init();
         
+    }
+    public static void exec(PriorityQueue<Process> pq, ArrayList<Process> list)
+    {
+        Random rand=new Random();
         //int index=calculateFrequency();
         double f=0.0;
         //System.out.println("Frequency is "+f);
@@ -52,32 +60,42 @@ class ccedf
                 utilcal.set(p.id-1, p.execution);
                 int index=calculateFrequency();
                 f=availablefreq[index]/4.0;
-                int ac=1;
-                co++;
-                if(p.id==1 && co==2){
-                    ac=2;
+                int ac=rand.nextInt(p.execution)+1;
+                double decision_point=Math.min(findtime(current_time,false),current_time+p.execution);
+                if(current_time+ac/f==decision_point)
+                {
+                    System.out.println("Process "+p.id+" is executing from "+current_time+" to "+(current_time+ac/f));
+                    current_time+=ac/f;
+                    utilcal.set(p.id-1, ac);
+                    index=calculateFrequency();
+                    f=availablefreq[index]/4.0;
+
+                   // time+=p.execution;
+                }
+                else
+                {
+                    findtime(current_time, true);
+                    System.out.println("Process "+p.id+" is executing from "+current_time+" to "+decision_point);
+                    p.execution-=decision_point-current_time;
+                    current_time=decision_point;
+                    // time+=decision_point-current_time;
+                    pq.add(p);
                 }
                 energy+=ac/f*availablevolt[index]*availablevolt[index]*f;
-                System.out.println("Process "+p.id+" is executing from "+current_time+" to "+(current_time+ac/f));
-                //System.out.println("currrr"+(current_time+ac/f));
+
                 utilcal.set(p.id-1, ac);
-                reinit(current_time, current_time+ac/f);
+                // reinit(current_time, current_time+ac/f);
                 current_time += ac/f;
-                index=calculateFrequency();
-                f=availablefreq[index]/4.0;
+                
                 // System.out.println("blah" + utilcal+" "+ac);
                 System.out.println();
-                
-                for(Process x:pq)
-                    System.out.println(x.id+" "+x.deadline);
-                //System.out.println();
                 busytime +=ac/f;
                 
                 
             }
             else
             {
-                int nexttask=findtime(current_time,true);
+                double nexttask=findtime(current_time,true);
                 System.out.println("Idle from "+current_time+" to "+nexttask);
                 System.out.println();
                 idletime+=nexttask-current_time;
@@ -109,6 +127,7 @@ class ccedf
         }
         for(Process p:list)
             utilcal.set(p.id-1,p.execution);
+        
         sc.close();
     }
     static void reinit(double timebefore, double timeafter)
@@ -124,21 +143,39 @@ class ccedf
             }
         }
     }
-    static int findtime(double current_time, boolean add)
+    static double findtime(double current_time, boolean add)
     {
-        int nexttime=Integer.MAX_VALUE;
+        int toadd[]=new int[list.size()];
+        double nexttime=Integer.MAX_VALUE;
         Process nextprocess=new Process();
         for(Process p:list)
         {
-            if(((int)Math.floor(current_time/p.period)*p.period+p.period) < nexttime)
+            if(((current_time/p.period)*p.period+p.period) < nexttime)
             {
-                nexttime=(int)Math.floor(current_time/p.period)*p.period+p.period;
+                Arrays.fill(toadd, 0);
+                toadd[p.id-1]=1;
+                nexttime=(current_time/p.period)*p.period+p.period;
                 nextprocess.deadline=nexttime+p.period;
                 nextprocess.execution=p.execution;
                 nextprocess.id=p.id;
             }
+            else if(((current_time/p.period)*p.period+p.period) == nexttime)
+            {
+                toadd[p.id-1]=1;
+            }
         }
-        if(add) pq.add(nextprocess);
+        if(add) 
+        {
+            for(int i=0;i<list.size();i++)
+            {
+                if(toadd[i]==1)
+                {
+                    Process toaddprocess=new Process(list.get(i).id, list.get(i).execution, list.get(i).period);
+                    toaddprocess.deadline=nexttime+toaddprocess.period;
+                    pq.add(toaddprocess);
+                }
+            }
+        }
         return nexttime;
     }
     static int calculateFrequency()
@@ -159,3 +196,6 @@ class ccedf
     }
     
 }
+
+
+

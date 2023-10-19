@@ -36,14 +36,35 @@ class edf
         {
             if(!pq.isEmpty())
             {
+                // System.out.println("Current time is "+current_time);
+                // for(Process x:pq)
+                //     System.out.println(x.id+" "+x.deadline);
+                // System.out.println();
+                // System.out.println();
                 Process p=pq.poll();
-                System.out.println("Process "+p.id+" is executing from "+current_time+" to "+(current_time+p.execution));
-                reinit(current_time, current_time+p.execution);
+                int decision_point=Math.min(findtime(current_time,false),current_time+p.execution);
+                if(current_time+p.execution==decision_point)
+                {
+                    System.out.println("Process "+p.id+" is executing from "+current_time+" to "+(current_time+p.execution));
+                    current_time+=p.execution;
+                    time+=p.execution;
+                }
+                else
+                {
+                    findtime(current_time, true);
+                    System.out.println("Process "+p.id+" is executing from "+current_time+" to "+decision_point);
+                    p.execution-=decision_point-current_time;
+                    current_time=decision_point;
+                    time+=decision_point-current_time;
+                    pq.add(p);
+                }
+                //System.out.println("Process "+p.id+" is executing from "+current_time+" to "+(current_time+p.execution));
+                //reinit(current_time, current_time+p.execution);
                 //for(Process x:pq)
                     //System.out.println(x.id+" "+x.deadline);
-                //System.out.println();
-                current_time+=p.execution;
-                time+=p.execution;
+                //
+                // current_time+=p.execution;
+                // time+=p.execution;
                 counter++;
             }
             else
@@ -86,19 +107,37 @@ class edf
     }
     static int findtime(int current_time, boolean add)
     {
+        int toadd[]=new int[list.size()];
         int nexttime=Integer.MAX_VALUE;
         Process nextprocess=new Process();
         for(Process p:list)
         {
             if(((current_time/p.period)*p.period+p.period) < nexttime)
             {
+                Arrays.fill(toadd, 0);
+                toadd[p.id-1]=1;
                 nexttime=(current_time/p.period)*p.period+p.period;
                 nextprocess.deadline=nexttime+p.period;
                 nextprocess.execution=p.execution;
                 nextprocess.id=p.id;
             }
+            else if(((current_time/p.period)*p.period+p.period) == nexttime)
+            {
+                toadd[p.id-1]=1;
+            }
         }
-        if(add) pq.add(nextprocess);
+        if(add) 
+        {
+            for(int i=0;i<list.size();i++)
+            {
+                if(toadd[i]==1)
+                {
+                    Process toaddprocess=new Process(list.get(i).id, list.get(i).execution, list.get(i).period);
+                    toaddprocess.deadline=nexttime+toaddprocess.period;
+                    pq.add(toaddprocess);
+                }
+            }
+        }
         return nexttime;
     }
 }
