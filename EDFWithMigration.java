@@ -10,6 +10,14 @@ class Task
     {
 
     }
+    Task(int id, int idInCore, int execution, int period, int deadline)
+    {
+        this.id = id;
+        this.idInCore = idInCore;
+        this.execution = execution;
+        this.period = period;
+        this.deadline = deadline;
+    }
 }
 class Job
 {
@@ -21,16 +29,32 @@ class Job
     {
 
     }
+    Job(int execution, int deadline, int task_id, int idInCore)
+    {
+        this.execution = execution;
+        this.deadline = deadline;
+        this.task_id = task_id;
+        this.idInCore = idInCore;
+    }
 }
 public class EDFWithMigration {
     static ArrayList<Task> taskList = new ArrayList<>();
     static ArrayList<ArrayList<Integer>> taskAllocation = new ArrayList<>();
+    static ArrayList<ArrayList<Job>> toTake = new ArrayList<>();
     static boolean shutDownable[];
+    static int threshold[];
     static int availablefreq[]={2,3,4};
     static int availablevolt[]={1,3,4};
     static int numberOfCores = 4;
+    static int slackTime[];
     public static void main(String[] args) {
         shutDownable = new boolean[numberOfCores];
+        slackTime = new int[numberOfCores];
+        threshold = new int[numberOfCores];
+        for(int i=0;i<numberOfCores;i++)
+        {
+            toTake.add(new ArrayList<>());
+        }
         initTasks();
         taskAllocate();
         initIsShutDownable();
@@ -70,17 +94,24 @@ public class EDFWithMigration {
     {
         for(int i=0;i<numberOfCores;i++)
         {
-            if(checkIfShutDownable(taskAllocation.get(i)))
+            if(checkIfShutDownable(taskAllocation.get(i), i))
                 shutDownable[i] = true;
             else
                 shutDownable[i] = false;
         }
     }
-    public static boolean checkIfShutDownable(ArrayList<Integer> taskSet)
+    public static boolean checkIfShutDownable(ArrayList<Integer> taskSet, int i)
     {
         boolean ans = false;
+        int min = Integer.MAX_VALUE;
+        for(int j=0;j<taskSet.size();j++)
+        {
+            int index = taskSet.get(j);
+            min = Math.min(min, taskList.get(index).period - taskList.get(index).execution);
+        }
         //algorithm to check shutdownability
-        return ans;
+        slackTime[i] = 2*min; //temporarily
+        return slackTime[i] > threshold[i];
     }
 
     static class Core extends Thread {
@@ -121,32 +152,65 @@ public class EDFWithMigration {
                     int index = calculateFrequency();
                     f = availablefreq[index]/4.0;
                     int ac = rand.nextInt(j.execution)+1;
-                    double decision_point = Math.min(findtime(current_time,false), current_time+j.execution);
+                    slackTime[coreNumber] += j.execution/f - ac/f;
+                    double decision_point = Math.min(findtime(current_time,false), current_time+ ac/f);
+                    
                     if(current_time+ac/f == decision_point)
                     {
                         System.out.println("Process " + j.idInCore + " is executing from " + current_time + " to " + (current_time+ac/f));
-                        current_time+=ac/f;
+                        current_time += ac/f;
                         utilcal.set(j.idInCore, ac);
-                        index=calculateFrequency();
-                        f=availablefreq[index]/4.0;
-    
+                        index = calculateFrequency();
+                        f = availablefreq[index]/4.0;
+                        slackTime[coreNumber] += j.execution/f - ac/f;
                        // time+=p.execution;
                     }
                     else
                     {
                         findtime(current_time, true);
                         System.out.println("Process "+ j.idInCore + " is executing from " + current_time + " to " + decision_point);
-                        j.execution-=decision_point-current_time;
-                        current_time=decision_point;
+                        j.execution -= decision_point-current_time;
+                        current_time = decision_point;
                         pq.add(j);
                     }
                 }
                 else
                 {
-                    double nexttask=findtime(current_time,true);
-                    System.out.println("Idle from "+current_time+" to "+nexttask);
-                    System.out.println();
-                    current_time=nexttask;
+                    if(shutDownable[coreNumber]) current_time = migrate(current_time);
+                    else
+                    {
+                        double nexttask = findtime(current_time,true);
+                        System.out.println("Idle from "+current_time+" to "+nexttask);
+                        System.out.println();
+                        current_time = nexttask;
+                    }
+                }
+                //migrating my longest execution job to another core
+                if(shutDownable[coreNumber])
+                {
+                    ArrayList<Job> temp = new ArrayList<>();
+                    for(Job j: pq)
+                        temp.add(j);
+                    Collections.sort(temp, new Comparator<Job>(){
+                        public int compare(Job p1, Job p2)
+                        {
+                            return p2.execution - p1.execution;
+                        }
+                    });
+                    for(int i=0;i<temp.size();i++)
+                    {
+                        Job j = temp.get(i);
+                        if(j.execution > slackTime[coreNumber])
+                        {
+                            pq.remove(j);
+                            int newCore = coreNumber;
+                            toTake.get(newCore).add(j);
+                            
+                            break;
+                        }
+                    }
+                    addJobsFromToTake();
+                    //for(int i)
                 }
             }
         }
@@ -228,9 +292,63 @@ public class EDFWithMigration {
             }
             return nexttime;
         }
+        public void addJobsFromToTake()
+        {
+            for(Job j: toTake.get(coreNumber))
+            {
+                j.idInCore = -1;
+                pq.add(j);
+            }
+            toTake.get(coreNumber).clear();
+        }
+        public void reinit(double timebefore, double timeafter)
+        {
+            //System.out.println("blah" + timebefore+" "+timeafter);
+            for(Task p:tasks)
+            {
+                if(((int)Math.floor(timeafter/p.period) - (int)Math.floor(timebefore/p.period ))>=1)
+                {
+                    Job toadd=new Job();
+                    toadd.idInCore = p.idInCore;
+                    toadd.execution = p.execution;
+                    toadd.deadline = (int)Math.floor(timeafter/p.period)*p.period + p.period;
+                    pq.add(toadd);
+                }
+            }
+        }
+        public int migrate(double current_time)
+        {
+            boolean first = true;
+            int idInCore_earliest = -1;
+            int min = Integer.MAX_VALUE;
+            for(Task t:tasks)
+            {
+                if((int)Math.floor(current_time/t.deadline)*t.deadline+t.deadline < min)
+                {
+                    min = (int)Math.floor(current_time/t.deadline)*t.deadline+t.deadline;
+                    idInCore_earliest = t.idInCore;
+                }
+            }
+            if(tasks.get(idInCore_earliest).execution - current_time > threshold[coreNumber])
+            {
+                for(int i = 0; i < numberOfCores; i++)
+                {
+                    if(i != coreNumber && !shutDownable[i] && (slackTime[i] > tasks.get(idInCore_earliest).execution))
+                    {
+                        Job j = new Job();
+                        j.execution = tasks.get(idInCore_earliest).execution;
+                        j.deadline = min;
+                        j.idInCore = -1;
+                        toTake.get(i).add(j);
+                        slackTime[i] -= tasks.get(idInCore_earliest).execution;
+                        migrate(min - tasks.get(idInCore_earliest).period + tasks.get(idInCore_earliest).execution);
+                        break;
+                        
+                    }
+                }
+            }
+            reinit(current_time, tasks.get(idInCore_earliest).deadline);
+            return min - tasks.get(idInCore_earliest).period + tasks.get(idInCore_earliest).execution;
+        }
     }
-
-
-
-    
 }
